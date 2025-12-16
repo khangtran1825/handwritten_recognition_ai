@@ -3,40 +3,54 @@ import typing
 import numpy as np
 
 from mltu.inferenceModel import OnnxInferenceModel
-from mltu.utils.text_utils import ctc_decoder, get_cer
+from mltu.utils.text_utils import ctc_decoder, get_cer, get_wer
+from mltu.transformers import ImageResizer
 
 class ImageToWordModel(OnnxInferenceModel):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, char_list: typing.Union[str, list], *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.char_list = char_list
 
     def predict(self, image: np.ndarray):
-        image = cv2.resize(image, self.input_shapes[0][1:3][::-1])
+        image = ImageResizer.resize_maintaining_aspect_ratio(image, *self.input_shapes[0][1:3][::-1])
 
         image_pred = np.expand_dims(image, axis=0).astype(np.float32)
 
         preds = self.model.run(self.output_names, {self.input_names[0]: image_pred})[0]
 
-        text = ctc_decoder(preds, self.metadata["vocab"])[0]
+        text = ctc_decoder(preds, self.char_list)[0]
 
         return text
 
 if __name__ == "__main__":
     import pandas as pd
     from tqdm import tqdm
+    from mltu.configs import BaseModelConfigs
 
-    model = ImageToWordModel(model_path="Models/08_handwriting_recognition_torch/202303142139/model.onnx")
+    configs = BaseModelConfigs.load("Models/04_sentence_recognition/202301131202/configs.yaml")
 
-    df = pd.read_csv("Models/08_handwriting_recognition_torch/202303142139/val.csv").values.tolist()
+    model = ImageToWordModel(model_path=configs.model_path, char_list=configs.vocab)
 
-    accum_cer = []
+    df = pd.read_csv("Models/04_sentence_recognition/202301131202/val.csv").values.tolist()
+
+    accum_cer, accum_wer = [], []
     for image_path, label in tqdm(df):
         image = cv2.imread(image_path.replace("\\", "/"))
 
         prediction_text = model.predict(image)
 
         cer = get_cer(prediction_text, label)
-        print(f"Image: {image_path}, Label: {label}, Prediction: {prediction_text}, CER: {cer}")
+        wer = get_wer(prediction_text, label)
+        print("Image: ", image_path)
+        print("Label:", label)
+        print("Prediction: ", prediction_text)
+        print(f"CER: {cer}; WER: {wer}")
 
         accum_cer.append(cer)
+        accum_wer.append(wer)
 
-    print(f"Average CER: {np.average(accum_cer)}")
+        cv2.imshow(prediction_text, image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+    print(f"Average CER: {np.average(accum_cer)}, Average WER: {np.average(accum_wer)}")

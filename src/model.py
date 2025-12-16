@@ -1,115 +1,39 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from keras import layers
+from keras.models import Model
+
+from mltu.tensorflow.model_utils import residual_block
 
 
-def activation_layer(activation: str="relu", alpha: float=0.1, inplace: bool=True):
-    """ Activation layer wrapper for LeakyReLU and ReLU activation functions
-
-    Args:
-        activation: str, activation function name (default: 'relu')
-        alpha: float (LeakyReLU activation function parameter)
-
-    Returns:
-        torch.Tensor: activation layer
-    """
-    if activation == "relu":
-        return nn.ReLU(inplace=inplace)
+def train_model(input_dim, output_dim, activation="leaky_relu", dropout=0.2):
     
-    elif activation == "leaky_relu":
-        return nn.LeakyReLU(negative_slope=alpha, inplace=inplace)
+    inputs = layers.Input(shape=input_dim, name="input")
 
+    # normalize images here instead in preprocessing step
+    input = layers.Lambda(lambda x: x / 255)(inputs)
 
-class ConvBlock(nn.Module):
-    """ Convolutional block with batch normalization
-    """
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int, padding: int):
-        super(ConvBlock, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
-        self.bn = nn.BatchNorm2d(out_channels)
-        
-    def forward(self, x: torch.Tensor):
-        return self.bn(self.conv(x))
+    x1 = residual_block(input, 32, activation=activation, skip_conv=True, strides=1, dropout=dropout)
 
+    x2 = residual_block(x1, 32, activation=activation, skip_conv=True, strides=2, dropout=dropout)
+    x3 = residual_block(x2, 32, activation=activation, skip_conv=False, strides=1, dropout=dropout)
 
-class ResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, skip_conv=True, stride=1, dropout=0.2, activation="leaky_relu"):
-        super(ResidualBlock, self).__init__()
-        self.convb1 = ConvBlock(in_channels, out_channels, kernel_size=3, stride=stride, padding=1)
-        self.act1 = activation_layer(activation)
+    x4 = residual_block(x3, 64, activation=activation, skip_conv=True, strides=2, dropout=dropout)
+    x5 = residual_block(x4, 64, activation=activation, skip_conv=False, strides=1, dropout=dropout)
 
-        self.convb2 = ConvBlock(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
+    x6 = residual_block(x5, 128, activation=activation, skip_conv=True, strides=2, dropout=dropout)
+    x7 = residual_block(x6, 128, activation=activation, skip_conv=True, strides=1, dropout=dropout)
 
-        self.dropout = nn.Dropout(p=dropout)
-        
-        self.shortcut = None
-        if skip_conv:
-            if stride != 1 or in_channels != out_channels:
-                self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride)
+    x8 = residual_block(x7, 128, activation=activation, skip_conv=True, strides=2, dropout=dropout)
+    x9 = residual_block(x8, 128, activation=activation, skip_conv=False, strides=1, dropout=dropout)
 
-        self.act2 = activation_layer(activation)
-        
-    def forward(self, x):
-        skip = x
-        
-        out = self.act1(self.convb1(x))
-        out = self.convb2(out)
+    squeezed = layers.Reshape((x9.shape[-3] * x9.shape[-2], x9.shape[-1]))(x9)
 
-        if self.shortcut is not None:
-            out += self.shortcut(skip)
+    blstm = layers.Bidirectional(layers.LSTM(256, return_sequences=True))(squeezed)
+    blstm = layers.Dropout(dropout)(blstm)
 
-        out = self.act2(out)
-        out = self.dropout(out)
-        
-        return out
+    blstm = layers.Bidirectional(layers.LSTM(64, return_sequences=True))(blstm)
+    blstm = layers.Dropout(dropout)(blstm)
 
-class Network(nn.Module):
-    """ Handwriting recognition network for CTC loss"""
-    def __init__(self, num_chars: int, activation: str="leaky_relu", dropout: float=0.2):
-        super(Network, self).__init__()
+    output = layers.Dense(output_dim + 1, activation="softmax", name="output")(blstm)
 
-        self.rb1 = ResidualBlock(3, 16, skip_conv = True, stride=1, activation=activation, dropout=dropout)
-        self.rb2 = ResidualBlock(16, 16, skip_conv = True, stride=2, activation=activation, dropout=dropout)
-        self.rb3 = ResidualBlock(16, 16, skip_conv = False, stride=1, activation=activation, dropout=dropout)
-
-        self.rb4 = ResidualBlock(16, 32, skip_conv = True, stride=2, activation=activation, dropout=dropout)
-        self.rb5 = ResidualBlock(32, 32, skip_conv = False, stride=1, activation=activation, dropout=dropout)
-
-        self.rb6 = ResidualBlock(32, 64, skip_conv = True, stride=2, activation=activation, dropout=dropout)
-        self.rb7 = ResidualBlock(64, 64, skip_conv = True, stride=1, activation=activation, dropout=dropout)
-
-        self.rb8 = ResidualBlock(64, 64, skip_conv = False, stride=1, activation=activation, dropout=dropout)
-        self.rb9 = ResidualBlock(64, 64, skip_conv = False, stride=1, activation=activation, dropout=dropout)
-
-        self.lstm = nn.LSTM(64, 128, bidirectional=True, num_layers=1, batch_first=True)
-        self.lstm_dropout = nn.Dropout(p=dropout)
-
-        self.output = nn.Linear(256, num_chars + 1)
-
-    def forward(self, images: torch.Tensor) -> torch.Tensor:
-        # normalize images between 0 and 1
-        images_flaot = images / 255.0
-
-        # transpose image to channel first
-        images_flaot = images_flaot.permute(0, 3, 1, 2)
-
-        # apply convolutions
-        x = self.rb1(images_flaot)
-        x = self.rb2(x)
-        x = self.rb3(x)
-        x = self.rb4(x)
-        x = self.rb5(x)
-        x = self.rb6(x)
-        x = self.rb7(x)
-        x = self.rb8(x)
-        x = self.rb9(x)
-
-        x = x.reshape(x.size(0), -1, x.size(1))
-
-        x, _ = self.lstm(x)
-        x = self.lstm_dropout(x)
-
-        x = self.output(x)
-        x = F.log_softmax(x, 2)
-
-        return x
+    model = Model(inputs=inputs, outputs=output)
+    return model
