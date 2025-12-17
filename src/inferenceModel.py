@@ -22,26 +22,54 @@ class ImageToWordModel(OnnxInferenceModel):
 
         return text
 
+
 if __name__ == "__main__":
     import pandas as pd
     from tqdm import tqdm
     from mltu.configs import BaseModelConfigs
+    import os
 
-    configs = BaseModelConfigs.load("models/model_demo/configs.yaml")
+    # 1. Xác định thư mục gốc của dự án (project_root)
+    # Lấy thư mục chứa file hiện tại (src)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Lấy thư mục cha của src (handwritten_recognition_ai)
+    project_root = os.path.dirname(current_dir)
+
+    # 2. Tạo đường dẫn tuyệt đối tới file configs.yaml
+    config_path = os.path.join(project_root, "models", "model_demo", "configs.yaml")
+
+    # Load cấu hình
+    configs = BaseModelConfigs.load(config_path)
+
+    # 3. QUAN TRỌNG: Cập nhật đường dẫn model thành tuyệt đối
+    # configs.model_path lấy từ yaml là tương đối ("models/model_demo") -> cần nối với project_root
+    configs.model_path = os.path.join(project_root, configs.model_path)
 
     model = ImageToWordModel(model_path=configs.model_path, char_list=configs.vocab)
 
-    df = pd.read_csv("models/model_demo/val.csv").values.tolist()
+    # 4. Tạo đường dẫn tuyệt đối tới file val.csv
+    val_csv_path = os.path.join(project_root, "models", "model_demo", "val.csv")
+    df = pd.read_csv(val_csv_path).values.tolist()
 
     accum_cer, accum_wer = [], []
     for image_path, label in tqdm(df):
-        image = cv2.imread(image_path.replace("\\", "/"))
+        # 5. Cập nhật đường dẫn ảnh thành tuyệt đối để cv2 đọc được
+        # image_path trong csv là "Datasets/..." -> nối với project_root
+        full_image_path = os.path.join(project_root, "Datasets", "IAM_Sentences", "sentences", image_path)
+
+
+        image = cv2.imread(full_image_path)
+
+        # Kiểm tra xem ảnh có đọc được không
+        if image is None:
+            print(f"Warning: Không tìm thấy ảnh tại {full_image_path}")
+            continue
 
         prediction_text = model.predict(image)
 
         cer = get_cer(prediction_text, label)
         wer = get_wer(prediction_text, label)
-        print("Image: ", image_path)
+        print("Image: ", full_image_path)
         print("Label:", label)
         print("Prediction: ", prediction_text)
         print(f"CER: {cer}; WER: {wer}")
@@ -49,8 +77,11 @@ if __name__ == "__main__":
         accum_cer.append(cer)
         accum_wer.append(wer)
 
-        cv2.imshow(prediction_text, image)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        # cv2.imshow(prediction_text, image)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
 
-    print(f"Average CER: {np.average(accum_cer)}, Average WER: {np.average(accum_wer)}")
+    if accum_cer and accum_wer:
+        print(f"Average CER: {np.average(accum_cer)}, Average WER: {np.average(accum_wer)}")
+    else:
+        print("Không có dữ liệu để tính toán (có thể do không tìm thấy ảnh).")
