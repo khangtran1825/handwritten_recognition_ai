@@ -11,7 +11,8 @@ from mltu.annotations.images import CVImage
 
 from mltu.tensorflow.dataProvider import DataProvider
 from mltu.tensorflow.losses import CTCloss
-from mltu.tensorflow.callbacks import Model2onnx, TrainLogger
+from mltu.tensorflow.callbacks import TrainLogger
+# from mltu.tensorflow.callbacks import Model2onnx, TrainLogger
 from mltu.tensorflow.metrics import CERMetric, WERMetric
 
 from model import train_model
@@ -20,9 +21,11 @@ from configs import ModelConfigs
 import os
 from tqdm import tqdm
 
+configs = ModelConfigs()
+
 # Must download and extract datasets manually from https://fki.tic.heia-fr.ch/databases/download-the-iam-handwriting-database to Datasets\IAM_Sentences
-sentences_txt_path = os.path.join("Datasets", "IAM_Sentences", "ascii", "sentences.txt")
-sentences_folder_path = os.path.join("Datasets", "IAM_Sentences", "sentences")
+sentences_txt_path = os.path.join(configs.base_path, "Datasets", "IAM_Sentences", "ascii", "sentences.txt")
+sentences_folder_path = os.path.join(configs.base_path, "Datasets", "IAM_Sentences", "sentences")
 
 dataset, vocab, max_len = [], set(), 0
 words = open(sentences_txt_path, "r").readlines()
@@ -31,6 +34,8 @@ for line in tqdm(words):
         continue
 
     line_split = line.split(" ")
+    if len(line_split) < 3:
+        continue
     if line_split[2] == "err":
         continue
 
@@ -50,9 +55,6 @@ for line in tqdm(words):
     dataset.append([rel_path, label])
     vocab.update(list(label))
     max_len = max(max_len, len(label))
-
-# Create a ModelConfigs object to store model configurations
-configs = ModelConfigs()
 
 # Save vocab and maximum text length to configs
 configs.vocab = "".join(vocab)
@@ -106,15 +108,15 @@ checkpoint = ModelCheckpoint(f"{configs.model_path}/model.h5", monitor="val_CER"
 trainLogger = TrainLogger(configs.model_path)
 tb_callback = TensorBoard(f"{configs.model_path}/logs", update_freq=1)
 reduceLROnPlat = ReduceLROnPlateau(monitor="val_CER", factor=0.9, min_delta=1e-10, patience=5, verbose=1, mode="auto")
-model2onnx = Model2onnx(f"{configs.model_path}/model.h5")
+# model2onnx = Model2onnx(f"{configs.model_path}/model.h5")
 
 # Train the model
 model.fit(
     train_data_provider,
     validation_data=val_data_provider,
     epochs=configs.train_epochs,
-    callbacks=[earlystopper, checkpoint, trainLogger, reduceLROnPlat, tb_callback, model2onnx],
-    workers=configs.train_workers
+    callbacks=[earlystopper, checkpoint, trainLogger, reduceLROnPlat, tb_callback]
+
 )
 
 # Save training and validation datasets as csv files

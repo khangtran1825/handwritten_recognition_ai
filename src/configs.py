@@ -1,12 +1,20 @@
+# src/configs.py
 import os
 from datetime import datetime
-
+from pathlib import Path  # Thêm thư viện này
 from mltu.configs import BaseModelConfigs
+
 
 class ModelConfigs(BaseModelConfigs):
     def __init__(self):
         super().__init__()
-        self.model_path = os.path.join("Models/04_sentence_recognition", datetime.strftime(datetime.now(), "%Y%m%d%H%M"))
+        self.base_path = Path(__file__).resolve().parent.parent
+
+        self.model_path = os.path.join(
+            self.base_path,
+            "models/04_sentence_recognition",
+            datetime.strftime(datetime.now(), "%Y%m%d%H%M")
+        )
         self.vocab = ""
         self.height = 96
         self.width = 1408

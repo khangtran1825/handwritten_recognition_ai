@@ -6,6 +6,9 @@ from mltu.inferenceModel import OnnxInferenceModel
 from mltu.utils.text_utils import ctc_decoder, get_cer, get_wer
 from mltu.transformers import ImageResizer
 
+import os
+from pathlib import Path
+
 class ImageToWordModel(OnnxInferenceModel):
     def __init__(self, char_list: typing.Union[str, list], *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -27,11 +30,16 @@ if __name__ == "__main__":
     from tqdm import tqdm
     from mltu.configs import BaseModelConfigs
 
-    configs = BaseModelConfigs.load("Models/04_sentence_recognition/202301131202/configs.yaml")
+    BASE_PATH = Path(__file__).resolve().parent.parent
+
+    config_path = os.path.join(BASE_PATH, "models", "04_sentence_recognition", "202301131202", "configs.yaml")
+    val_csv_path = os.path.join(BASE_PATH, "models", "04_sentence_recognition", "202301131202", "val.csv")
+
+    configs = BaseModelConfigs.load(config_path)
 
     model = ImageToWordModel(model_path=configs.model_path, char_list=configs.vocab)
 
-    df = pd.read_csv("Models/04_sentence_recognition/202301131202/val.csv").values.tolist()
+    df = pd.read_csv(val_csv_path).values.tolist()
 
     accum_cer, accum_wer = [], []
     for image_path, label in tqdm(df):
