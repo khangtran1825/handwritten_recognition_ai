@@ -1,4 +1,5 @@
 import tensorflow as tf
+# Train bằng GPU để tối ưu tốc độ
 try: [tf.config.experimental.set_memory_growth(gpu, True) for gpu in tf.config.experimental.list_physical_devices("GPU")]
 except: pass
 
@@ -20,7 +21,7 @@ from configs import ModelConfigs
 import os
 from tqdm import tqdm
 
-# Must download and extract datasets manually from https://fki.tic.heia-fr.ch/databases/download-the-iam-handwriting-database to Datasets\IAM_Sentences
+# Dữ liệu train sử dụng từ tập IAM: https://fki.tic.heia-fr.ch/databases/download-the-iam-handwriting-database to Datasets\IAM_Sentences
 sentences_txt_path = os.path.join("Datasets", "IAM_Sentences", "ascii", "sentences.txt")
 sentences_folder_path = os.path.join("Datasets", "IAM_Sentences", "sentences")
 
@@ -31,6 +32,8 @@ for line in tqdm(words):
         continue
 
     line_split = line.split(" ")
+    if len(line_split) < 10:
+        continue
     if line_split[2] == "err":
         continue
 
@@ -51,15 +54,15 @@ for line in tqdm(words):
     vocab.update(list(label))
     max_len = max(max_len, len(label))
 
-# Create a ModelConfigs object to store model configurations
+# Khởi tạo câu hình
 configs = ModelConfigs()
 
-# Save vocab and maximum text length to configs
+# Lưu thông tin vào cấu hình
 configs.vocab = "".join(vocab)
 configs.max_text_length = max_len
 configs.save()
 
-# Create a data provider for the dataset
+# Data provider - tiền xử lý dữ liệu
 data_provider = DataProvider(
     dataset=dataset,
     skip_validation=True,
@@ -72,23 +75,23 @@ data_provider = DataProvider(
         ],
 )
 
-# Split the dataset into training and validation sets
+# Chia ra thành 2 tập dữ liệu: Dữ liệu train và dữ liệu validate (học 90%)
 train_data_provider, val_data_provider = data_provider.split(split = 0.9)
 
-# Augment training data with random brightness, rotation and erode/dilate
+# Tăng cường dữ liệu huấn luyện bằng cách thêm độ sáng ngẫu nhiên, xoay và hiệu ứng co giãn.
 train_data_provider.augmentors = [
     RandomBrightness(), 
     RandomErodeDilate(),
     RandomSharpen(),
     ]
 
-# Creating TensorFlow model architecture
+# Tạo kiến trúc mô hình TensorFlow
 model = train_model(
     input_dim = (configs.height, configs.width, 3),
     output_dim = len(configs.vocab),
 )
 
-# Compile the model and print summary
+# Compile mô hình
 model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=configs.learning_rate), 
     loss=CTCloss(), 
@@ -100,7 +103,7 @@ model.compile(
 )
 model.summary(line_length=110)
 
-# Define callbacks
+# Định nghĩa các hàm callback
 earlystopper = EarlyStopping(monitor="val_CER", patience=20, verbose=1, mode="min")
 checkpoint = ModelCheckpoint(f"{configs.model_path}/model.h5", monitor="val_CER", verbose=1, save_best_only=True, mode="min")
 trainLogger = TrainLogger(configs.model_path)
@@ -108,7 +111,7 @@ tb_callback = TensorBoard(f"{configs.model_path}/logs", update_freq=1)
 reduceLROnPlat = ReduceLROnPlateau(monitor="val_CER", factor=0.9, min_delta=1e-10, patience=5, verbose=1, mode="auto")
 model2onnx = Model2onnx(f"{configs.model_path}/model.h5")
 
-# Train the model
+# Huấn luyện mô hình
 model.fit(
     train_data_provider,
     validation_data=val_data_provider,
@@ -117,6 +120,6 @@ model.fit(
     workers=configs.train_workers
 )
 
-# Save training and validation datasets as csv files
+# Lưu kết quả training và validation datasets vào csv files
 train_data_provider.to_csv(os.path.join(configs.model_path, "train.csv"))
 val_data_provider.to_csv(os.path.join(configs.model_path, "val.csv"))
