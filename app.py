@@ -19,30 +19,76 @@ class ImageToWordModel(OnnxInferenceModel):
         self.char_list = char_list
 
     def predict(self, image):
-        # 1. Resize giữ nguyên tỉ lệ theo chuẩn của model
+        # 1-3. Preprocessing và prediction
         image = ImageResizer.resize_maintaining_aspect_ratio(
             image, *self.input_shapes[0][1:3][::-1]
         )
-
-        # ĐẢM BẢO 3 KÊNH MÀU: Tránh lỗi Rank cho ONNX
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
         elif image.shape[2] == 4:
             image = cv2.cvtColor(image, cv2.COLOR_RGBA2BGR)
 
-        # 2. Tạo Rank 4 (1, H, W, C)
         image_pred = np.expand_dims(image, axis=0).astype(np.float32)
-
-        # 3. Chạy dự đoán
         preds = self.model.run(self.output_names, {self.input_names[0]: image_pred})[0]
 
-        # 4. Tính toán Confidence Score thực tế từ lớp Softmax
-        softmax_preds = np.exp(preds) / np.sum(np.exp(preds), axis=-1, keepdims=True)
-        max_probs = np.max(softmax_preds, axis=-1)[0]
-        confidence = np.mean(max_probs) * 100
-
-        # 5. Giải mã văn bản bằng CTC
+        # 4. Giải mã text
         text = ctc_decoder(preds, self.char_list)[0]
+
+        print(f"\n=== KIỂM TRA ĐỊNH DẠNG PREDS ===")
+        print(f"Preds shape: {preds.shape}")
+        print(f"Preds range: min={np.min(preds):.4f}, max={np.max(preds):.4f}")
+        print(f"Sum across vocab (first timestep): {np.sum(preds[0, 0, :]):.4f}")
+
+        # Kiểm tra xem preds đã là xác suất chưa
+        # Nếu sum ≈ 1.0 → đã là softmax
+        # Nếu sum khác 1 nhiều → là logits hoặc log-probs
+        sum_first_timestep = np.sum(preds[0, 0, :])
+
+        if 0.99 < sum_first_timestep < 1.01:
+            print("✅ PREDS ĐÃ LÀ SOFTMAX PROBABILITIES!")
+            softmax_preds = preds  # Không cần tính lại
+        elif np.min(preds) < 0:
+            print("✅ PREDS LÀ LOG-PROBABILITIES (âm) → Dùng exp()")
+            softmax_preds = np.exp(preds)  # Log-probs → probs
+        else:
+            print("✅ PREDS LÀ LOGITS (dương) → Dùng softmax")
+            preds_shifted = preds - np.max(preds, axis=-1, keepdims=True)
+            softmax_preds = np.exp(preds_shifted) / np.sum(np.exp(preds_shifted), axis=-1, keepdims=True)
+
+        # Lấy max prob mỗi timestep
+        max_probs = np.max(softmax_preds[0], axis=-1)
+        print(f"\nSau xử lý:")
+        print(
+            f"Max probs stats: min={np.min(max_probs):.4f}, max={np.max(max_probs):.4f}, mean={np.mean(max_probs):.4f}")
+
+        # Lấy predicted classes
+        predicted_indices = np.argmax(softmax_preds[0], axis=-1)
+        blank_index = len(self.char_list)
+
+        # Tính confidence từ non-blank tokens
+        non_blank_probs = []
+        for t, idx in enumerate(predicted_indices):
+            if idx != blank_index:
+                prob = softmax_preds[0, t, idx]
+                non_blank_probs.append(prob)
+
+        # CODE MỚI
+        if len(non_blank_probs) > 0:
+            # Bước 1: Chuyển các xác suất sang không gian Log để tính toán an toàn
+            # np.maximum(..., 1e-9) để tránh lỗi log(0)
+            log_probs = np.log(np.maximum(non_blank_probs, 1e-9))
+
+            # Bước 2: Tính trung bình cộng của các Log
+            mean_log = np.mean(log_probs)
+
+            # Bước 3: Dùng hàm Exp để đưa về giá trị xác suất gốc (đây chính là Geometric Mean)
+            geometric_mean = np.exp(mean_log)
+
+            confidence = geometric_mean * 100
+        else:
+            confidence = 0.0
+
+        print("=" * 40 + "\n")
 
         return text, confidence
 
