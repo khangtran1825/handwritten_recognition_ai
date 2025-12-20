@@ -1,0 +1,30 @@
+# Core Deep Learning
+tensorflow==2.13.0
+keras==2.13.1
+
+# MLTU - Machine Learning Training Utilities
+mltu==1.1.3
+
+# Computer Vision
+opencv-python==4.8.1.78
+Pillow==10.0.1
+
+# Scientific Computing
+numpy==1.24.3
+
+# Metrics
+jiwer==3.0.3
+
+# Web Interface
+gradio==4.44.0
+
+# Data Processing
+pandas==2.0.3
+tqdm==4.66.1
+
+# ONNX Runtime (for model inference)
+onnxruntime==1.16.0
+
+# Optional: GPU support (uncomment if using NVIDIA GPU)
+# tensorflow-gpu==2.13.0
+# onnxruntime-gpu==1.16.0
