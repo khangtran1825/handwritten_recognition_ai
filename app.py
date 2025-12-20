@@ -4,20 +4,28 @@ import numpy as np
 from PIL import Image
 from datetime import datetime
 from jiwer import cer, wer
+import os
 
 # Import các lớp từ dự án của bạn
 from mltu.inferenceModel import OnnxInferenceModel
 from mltu.utils.text_utils import ctc_decoder
 from mltu.transformers import ImageResizer
 from mltu.configs import BaseModelConfigs
+from src.post_processing import  TextPostProcessor
 
 
 class ImageToWordModel(OnnxInferenceModel):
-    def __init__(self, char_list, *args, **kwargs):
+    def __init__(self, char_list, use_post_processing=True, corpus_path=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.char_list = char_list
+        self.use_post_processing = use_post_processing
 
-    def predict(self, image):
+        # Khởi tạo post-processor với corpus
+        if self.use_post_processing:
+            print(f"Initializing post-processor with corpus: {corpus_path}")
+            self.post_processor = TextPostProcessor(corpus_path=corpus_path)
+
+    def predict(self, image, apply_post_processing=None):
         image = ImageResizer.resize_maintaining_aspect_ratio(
             image, *self.input_shapes[0][1:3][::-1]
         )
@@ -30,6 +38,7 @@ class ImageToWordModel(OnnxInferenceModel):
         preds = self.model.run(self.output_names, {self.input_names[0]: image_pred})[0]
 
         text = ctc_decoder(preds, self.char_list)[0]
+        raw_text = text
 
         # Xử lý predictions thành softmax
         sum_first_timestep = np.sum(preds[0, 0, :])
@@ -51,42 +60,55 @@ class ImageToWordModel(OnnxInferenceModel):
                 prob = softmax_preds[0, t, idx]
                 non_blank_probs.append(prob)
 
-        # CONFIDENCE MỚI - BỎ LENGTH PENALTY
+        # Tính confidence
         if len(non_blank_probs) > 0:
-            # Geometric mean
             log_probs = np.log(np.maximum(non_blank_probs, 1e-9))
             mean_log = np.mean(log_probs)
             base_confidence = np.exp(mean_log)
-
-            # Soft min penalty (0.7 - 1.0 range)
             min_prob = np.min(non_blank_probs)
             min_penalty = 0.7 + 0.3 * min_prob
-
-            # Final confidence
             confidence = base_confidence * min_penalty * 100
-
-            print(f"Base: {base_confidence * 100:.1f}% | Min: {min_prob:.2f} | Final: {confidence:.1f}%")
         else:
             confidence = 0.0
 
-        return text, confidence
+        # Áp dụng post-processing
+        if apply_post_processing is None:
+            apply_post_processing = self.use_post_processing
+
+        if apply_post_processing and self.post_processor:
+            text = self.post_processor.process(text, use_viterbi=True)
+
+        return text, raw_text, confidence
 
 
 # Load cấu hình
 config_path = "models/model_demo/configs.yaml"
 configs = BaseModelConfigs.load(config_path)
 
+# Tìm corpus file (nếu có)
+corpus_path = os.path.join("models", "model_demo", "corpus.txt")
+if not os.path.exists(corpus_path):
+    print(f"Warning: Corpus not found at {corpus_path}")
+    print("Run 'python src/build_corpus.py' to build corpus for better accuracy")
+    corpus_path = None
+
 # Khởi tạo model
 model = ImageToWordModel(
     model_path=configs.model_path,
-    char_list=configs.vocab
+    char_list=configs.vocab,
+    use_post_processing=True,
+    corpus_path=corpus_path
 )
 
+print("✓ Model loaded successfully!")
+if corpus_path:
+    print(f"✓ Using corpus: {corpus_path}")
 
-def recognize_handwriting(image, ground_truth=None):
+
+def recognize_handwriting(image, ground_truth=None, enable_postprocessing=True):
     try:
         if image is None:
-            return None, None, None
+            return None, None, None, None
 
         # Xử lý định dạng đầu vào
         if isinstance(image, dict):
@@ -96,7 +118,7 @@ def recognize_handwriting(image, ground_truth=None):
             image = np.array(image)
 
         if not isinstance(image, np.ndarray):
-            return None, None, None
+            return None, None, None, None
 
         # Chuẩn hóa màu sắc
         if len(image.shape) == 3:
@@ -108,9 +130,12 @@ def recognize_handwriting(image, ground_truth=None):
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
         # Dự đoán
-        prediction_text, confidence_score = model.predict(image)
+        prediction_text, raw_prediction, confidence_score = model.predict(
+            image,
+            apply_post_processing=enable_postprocessing
+        )
 
-        # Hiển thị kết quả
+        # Hiển thị kết quả chính
         result_html = f"""
         <div style="padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                     border-radius: 12px; margin: 10px 0;">
@@ -123,15 +148,63 @@ def recognize_handwriting(image, ground_truth=None):
         </div>
         """
 
-        # Màu sắc confidence dựa trên score
+        # So sánh raw vs processed
+        comparison_html = ""
+        if enable_postprocessing and raw_prediction != prediction_text:
+            # Highlight differences
+            raw_words = raw_prediction.split()
+            corrected_words = prediction_text.split()
+
+            diff_html_raw = []
+            diff_html_corrected = []
+
+            for i in range(max(len(raw_words), len(corrected_words))):
+                raw_word = raw_words[i] if i < len(raw_words) else ""
+                corr_word = corrected_words[i] if i < len(corrected_words) else ""
+
+                if raw_word != corr_word:
+                    diff_html_raw.append(
+                        f'<span style="background: #fee; padding: 2px 6px; border-radius: 4px;">{raw_word}</span>')
+                    diff_html_corrected.append(
+                        f'<span style="background: #d1fae5; padding: 2px 6px; border-radius: 4px;">{corr_word}</span>')
+                else:
+                    diff_html_raw.append(raw_word)
+                    diff_html_corrected.append(corr_word)
+
+            comparison_html = f"""
+            <div style="padding: 15px; background: #fef3c7; border-radius: 10px; margin: 10px 0; 
+                        border-left: 4px solid #f59e0b;">
+                <div style="font-size: 0.9em; color: #92400e; margin-bottom: 12px;">
+                    <b>🔧 Post-Processing Applied (Viterbi + Language Model)</b>
+                </div>
+                <div style="display: grid; gap: 12px;">
+                    <div>
+                        <span style="color: #78350f; font-size: 0.85em; font-weight: 600;">Raw OCR Output:</span>
+                        <div style="background: white; padding: 12px; border-radius: 6px; 
+                                    font-family: 'Courier New', monospace; color: #374151; line-height: 1.8;">
+                            {' '.join(diff_html_raw)}
+                        </div>
+                    </div>
+                    <div>
+                        <span style="color: #78350f; font-size: 0.85em; font-weight: 600;">Corrected Text:</span>
+                        <div style="background: white; padding: 12px; border-radius: 6px; 
+                                    font-family: 'Courier New', monospace; color: #374151; line-height: 1.8;">
+                            {' '.join(diff_html_corrected)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """
+
+        # Màu sắc confidence
         if confidence_score >= 80:
-            conf_color = "#10b981"  # Green
+            conf_color = "#10b981"
             conf_emoji = "🎯"
         elif confidence_score >= 60:
-            conf_color = "#f59e0b"  # Orange
+            conf_color = "#f59e0b"
             conf_emoji = "⚠️"
         else:
-            conf_color = "#ef4444"  # Red
+            conf_color = "#ef4444"
             conf_emoji = "❌"
 
         confidence_html = f"""
@@ -155,6 +228,29 @@ def recognize_handwriting(image, ground_truth=None):
             val_cer = cer(ground_truth.strip(), prediction_text)
             val_wer = wer(ground_truth.strip(), prediction_text)
 
+            # Tính metrics cho raw prediction
+            val_cer_raw = cer(ground_truth.strip(), raw_prediction)
+            val_wer_raw = wer(ground_truth.strip(), raw_prediction)
+
+            improvement_note = ""
+            if enable_postprocessing:
+                cer_improvement = (val_cer_raw - val_cer) / (val_cer_raw + 1e-10) * 100
+                wer_improvement = (val_wer_raw - val_wer) / (val_wer_raw + 1e-10) * 100
+
+                if val_cer < val_cer_raw or val_wer < val_wer_raw:
+                    improvement_note = f"""
+                    <div style="margin-top: 10px; padding: 12px; background: #d1fae5; border-radius: 6px; 
+                                border-left: 4px solid #10b981;">
+                        <div style="color: #065f46; font-size: 0.95em; font-weight: 600; margin-bottom: 6px;">
+                            ✓ Post-processing Improvement:
+                        </div>
+                        <div style="color: #047857; font-size: 0.9em; display: grid; gap: 4px;">
+                            <div>CER: {val_cer_raw:.2%} → {val_cer:.2%} (improved by {cer_improvement:.1f}%)</div>
+                            <div>WER: {val_wer_raw:.2%} → {val_wer:.2%} (improved by {wer_improvement:.1f}%)</div>
+                        </div>
+                    </div>
+                    """
+
             metrics_html = f"""
             <div style="padding: 20px; background: #f3f4f6; border-radius: 12px; margin: 10px 0;">
                 <h3 style="margin: 0 0 15px 0; color: #374151;">📊 Chi tiết đánh giá</h3>
@@ -173,22 +269,31 @@ def recognize_handwriting(image, ground_truth=None):
                     <div style="font-size: 0.85em; color: #92400e; margin-bottom: 5px;"><b>Ground Truth:</b></div>
                     <div style="font-size: 1.1em; color: #78350f;">{ground_truth}</div>
                 </div>
+                {improvement_note}
             </div>
             """
 
-        return result_html, confidence_html, metrics_html
+        return result_html, confidence_html, comparison_html, metrics_html
 
     except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
         error_html = f"""
         <div style="padding: 20px; background: #fee; border-radius: 12px; border: 2px solid #ef4444;">
             <h3 style="color: #dc2626; margin: 0 0 10px 0;">❌ Lỗi</h3>
             <p style="color: #991b1b; margin: 0;">{str(e)}</p>
+            <details style="margin-top: 10px;">
+                <summary style="cursor: pointer; color: #991b1b;">Chi tiết lỗi</summary>
+                <pre style="background: #fef2f2; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 0.85em;">
+{error_detail}
+                </pre>
+            </details>
         </div>
         """
-        return error_html, None, None
+        return error_html, None, None, None
 
 
-# CSS tối ưu
+# CSS
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
@@ -197,7 +302,7 @@ custom_css = """
 }
 
 .gradio-container {
-    max-width: 1200px !important;
+    max-width: 1400px !important;
     margin: auto !important;
 }
 
@@ -257,7 +362,7 @@ footer {
 # Tạo giao diện
 with gr.Blocks(css=custom_css, theme=gr.themes.Soft()) as demo:
     gr.HTML('<h1 id="main_title">✍️ Handwriting Recognition AI</h1>')
-    gr.HTML('<p id="subtitle">Upload your handwritten text image for instant recognition</p>')
+    gr.HTML('<p id="subtitle">Advanced OCR with Viterbi Post-Processing & Language Model</p>')
 
     with gr.Row():
         with gr.Column(scale=1):
@@ -269,12 +374,18 @@ with gr.Blocks(css=custom_css, theme=gr.themes.Soft()) as demo:
                 elem_classes="upload-section"
             )
 
-            # Ground truth (optional) - Đơn giản hóa
+            # Post-processing toggle
+            postprocess_checkbox = gr.Checkbox(
+                label="Enable Post-Processing",
+                value=True,
+                info="Uses Viterbi algorithm + N-gram language model for correction"
+            )
+
+            # Ground truth
             ground_truth_input = gr.Textbox(
-                label="Ground Truth (optional)",
-                placeholder="Enter expected text to see metrics...",
-                lines=1,
-                visible=False
+                label="Ground Truth (Optional)",
+                placeholder="Enter expected text to calculate accuracy metrics...",
+                lines=2
             )
 
             # Buttons
@@ -284,28 +395,30 @@ with gr.Blocks(css=custom_css, theme=gr.themes.Soft()) as demo:
 
         with gr.Column(scale=1):
             # Results
-            result_output = gr.HTML(label="Result")
-            confidence_output = gr.HTML(label="Confidence")
-            metrics_output = gr.HTML(label="Metrics")
+            result_output = gr.HTML(label="Recognition Result")
+            confidence_output = gr.HTML(label="Confidence Score")
+            comparison_output = gr.HTML(label="Post-Processing Details")
+            metrics_output = gr.HTML(label="Accuracy Metrics")
 
     # Event handlers
     recognize_btn.click(
         fn=recognize_handwriting,
-        inputs=[image_input, ground_truth_input],
-        outputs=[result_output, confidence_output, metrics_output]
+        inputs=[image_input, ground_truth_input, postprocess_checkbox],
+        outputs=[result_output, confidence_output, comparison_output, metrics_output]
     )
 
     clear_btn.click(
-        fn=lambda: (None, "", None, None, None),
+        fn=lambda: (None, "", True, None, None, None, None),
         inputs=[],
-        outputs=[image_input, ground_truth_input, result_output, confidence_output, metrics_output]
+        outputs=[image_input, ground_truth_input, postprocess_checkbox,
+                 result_output, confidence_output, comparison_output, metrics_output]
     )
 
     # Auto-recognize on image upload
     image_input.change(
         fn=recognize_handwriting,
-        inputs=[image_input, ground_truth_input],
-        outputs=[result_output, confidence_output, metrics_output]
+        inputs=[image_input, ground_truth_input, postprocess_checkbox],
+        outputs=[result_output, confidence_output, comparison_output, metrics_output]
     )
 
 if __name__ == "__main__":
