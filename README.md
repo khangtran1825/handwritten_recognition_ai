@@ -1,81 +1,83 @@
-# Handwriting Recognition AI
+# Nhận diện chữ viết tay với TensorFlow
 
-A simple and extensible **Handwriting Recognition AI** project that detects and recognizes handwritten text from images using machine learning / deep learning techniques.
-
-This project is suitable for:
-
-* Learning computer vision & OCR basics
-* Recognizing handwritten digits or characters
-* Building document digitization or note-scanning tools
+Dự án nhận diện câu chữ viết tay sử dụng TensorFlow và CTC loss. Ứng dụng trong số hóa ghi chú, phiên âm tài liệu lịch sử và tự động chấm điểm bài thi.
 
 ---
 
-## ✨ Features
+## Tổng quan
 
-* Handwritten text recognition from images
-* Image preprocessing (grayscale, thresholding, noise removal)
-* Deep learning–based recognition (CNN / RNN / Transformer-ready)
-* Easy to train with custom datasets
-* Modular and easy to extend
+Hệ thống sử dụng mạng neural sâu kết hợp CNN và Bidirectional LSTM để nhận diện câu chữ viết tay từ ảnh. Model được huấn luyện trên tập dữ liệu IAM Handwriting Database và có khả năng hậu xử lý văn bản sử dụng thuật toán Viterbi kết hợp Language Model.
 
----
+### Kiến trúc model
 
-## 🧠 Model Overview
-
-The system typically consists of:
-
-1. **Preprocessing**
-
-   * Image resizing
-   * Grayscale conversion
-   * Normalization
-   * Noise reduction
-
-2. **Feature Extraction**
-
-   * Convolutional Neural Networks (CNN)
-
-3. **Sequence Modeling (optional)**
-
-   * LSTM / GRU for text lines
-
-4. **Prediction**
-
-   * Character or word-level output
+- **Backbone**: Residual CNN với 5 block
+- **Sequence modeling**: 2 lớp Bidirectional LSTM
+- **Decoder**: CTC (Connectionist Temporal Classification)
+- **Post-processing**: Viterbi algorithm + N-gram Language Model
 
 ---
 
-## 📁 Project Structure
+## Tính năng
 
-```text
+- Nhận diện câu chữ viết tay từ ảnh
+- Hậu xử lý thông minh với Language Model
+- Sửa lỗi chính tả dựa trên OCR confusion matrix
+- Tính toán độ tin cậy (confidence score)
+- Đánh giá hiệu suất với CER và WER
+- Giao diện web trực quan với Gradio
+
+---
+
+## Cấu trúc thư mục
+
+```
 handwriting-recognition-ai/
 │
-├── data/                 # Training & testing datasets
-├── models/               # Saved models and weights
-├── src/                  # Source code
-│   ├── preprocess.py     # Image preprocessing
-│   ├── model.py          # Model architecture
-│   ├── train.py          # Training script
-│   ├── predict.py        # Inference script
+├── Datasets/
+│   └── IAM_Sentences/          # Tập dữ liệu IAM
+│       ├── ascii/
+│       │   └── sentences.txt
+│       └── sentences/
 │
-├── notebooks/            # Experiments and testing
-├── requirements.txt      # Dependencies
-├── README.md             # Project documentation
-└── LICENSE
+├── models/
+│   └── model_demo/             # Model đã huấn luyện
+│       ├── configs.yaml
+│       ├── model.h5
+│       ├── model.onnx
+│       ├── train.csv
+│       └── val.csv
+│
+├── src/
+│   ├── configs.py              # Cấu hình model
+│   ├── model.py                # Kiến trúc neural network
+│   ├── train.py                # Script huấn luyện
+│   └── inferenceModel.py       # Inference và đánh giá
+│
+├── app.py                      # Giao diện Gradio
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
-## ⚙️ Installation
+## Cài đặt
 
-1. Clone the repository:
+### Yêu cầu hệ thống
+
+- Python 3.8+
+- CUDA (khuyến nghị cho training)
+- 8GB RAM (tối thiểu)
+
+### Các bước cài đặt
+
+1. Clone repository:
 
 ```bash
-git clone https://github.com/your-username/handwriting-recognition-ai.git
-cd handwriting-recognition-ai
+git clone https://github.com/khangtran1825/handwritten_recognition_ai.git
+cd handwritten_recognition_ai
 ```
 
-2. Create a virtual environment (recommended):
+2. Tạo môi trường ảo:
 
 ```bash
 python -m venv venv
@@ -83,81 +85,217 @@ source venv/bin/activate   # Linux/Mac
 venv\Scripts\activate      # Windows
 ```
 
-3. Install dependencies:
+3. Cài đặt thư viện:
 
 ```bash
 pip install -r requirements.txt
 ```
 
+4. Tải tập dữ liệu IAM:
+
+- Truy cập: https://fki.tic.heia-fr.ch/databases/download-the-iam-handwriting-database
+- Tải "IAM Handwriting Database - Sentences"
+- Giải nén vào thư mục `Datasets/IAM_Sentences/`
+
 ---
 
-## 🚀 Usage
+## Sử dụng
 
-### Train the model
+### 1. Huấn luyện model
 
 ```bash
 python src/train.py
 ```
 
-### Predict handwriting from an image
+Cấu hình huấn luyện có thể chỉnh sửa trong `src/configs.py`:
+
+```python
+self.height = 96
+self.width = 1408
+self.batch_size = 32
+self.learning_rate = 0.0005
+self.train_epochs = 1000
+```
+
+### 2. Xây dựng corpus cho Language Model
 
 ```bash
-python src/predict.py --image path/to/image.png
+python src/build_corpus.py
+```
+
+Corpus được tạo từ nhãn trong tập huấn luyện và lưu tại `models/model_demo/corpus.txt`.
+
+### 3. Chạy giao diện web
+
+```bash
+python app.py
+```
+
+Truy cập `http://127.0.0.1:7860` để sử dụng giao diện.
+
+### 4. Inference từ code
+
+```python
+from mltu.configs import BaseModelConfigs
+from src.inferenceModel import ImageToWordModel
+import cv2
+
+# Load config và model
+configs = BaseModelConfigs.load("models/model_demo/configs.yaml")
+model = ImageToWordModel(
+    model_path=configs.model_path,
+    char_list=configs.vocab,
+    use_post_processing=True,
+    corpus_path="models/model_demo/corpus.txt"
+)
+
+# Đọc ảnh
+image = cv2.imread("path/to/image.png")
+
+# Dự đoán
+prediction, raw_prediction, confidence = model.predict(image)
+print(f"Kết quả: {prediction}")
+print(f"Độ tin cậy: {confidence:.2f}%")
 ```
 
 ---
 
-## 📊 Dataset
+## Hậu xử lý (Post-Processing)
 
-You can use popular handwriting datasets such as:
+Hệ thống sử dụng pipeline hậu xử lý đa tầng:
 
-* MNIST (digits)
-* EMNIST (characters)
-* IAM Handwriting Dataset (words & lines)
+### 1. Language Model
 
-Place datasets inside the `data/` directory.
+- N-gram model (bigram) với Laplace smoothing
+- Đánh giá xác suất của chuỗi từ
 
----
+### 2. Spell Corrector
 
-## 🧪 Example Output
+- Edit distance (Levenshtein)
+- OCR confusion matrix (l/i/1, o/0, rn/m, ...)
+- Word frequency từ corpus
 
-```text
-Input Image  →  "Hello World"
-Predicted   →  "Hello World"
+### 3. Viterbi Algorithm
+
+- Tìm chuỗi từ tối ưu
+- Kết hợp spell correction và language model
+- Tính toán với dynamic programming
+
+### Ví dụ
+
+```
+Input:  "THE Faurth Gospel was almast certainly"
+Output: "The Fourth Gospel was almost certainly"
 ```
 
 ---
 
-## 🛠 Technologies Used
+## Đánh giá hiệu suất
 
-* Python
-* TensorFlow / PyTorch
-* OpenCV
-* NumPy
-* Matplotlib
+### Metrics
 
----
+- **CER** (Character Error Rate): Tỷ lệ lỗi ở mức ký tự
+- **WER** (Word Error Rate): Tỷ lệ lỗi ở mức từ
+- **Confidence Score**: Độ tin cậy của dự đoán
 
-## 📌 Future Improvements
+### Chạy đánh giá trên validation set
 
-* Support cursive handwriting
-* Multi-language recognition
-* Transformer-based OCR
-* Web or mobile interface
+```bash
+python src/inferenceModel.py
+```
 
----
+Kết quả ví dụ:
 
-## 📜 License
+```
+Metric               Raw             Safe PP         Aggressive PP
+--------------------------------------------------------------------------------
+Average CER          0.0856          0.0823          0.0815
+Average WER          0.2134          0.2087          0.2098
+Avg Time (ms)        45.23           48.67           52.34
 
-This project is licensed under the MIT License.
-
----
-
-## 🙌 Acknowledgements
-
-* Open-source OCR community
-* Public handwriting datasets
+IMPROVEMENT vs RAW
+Safe Mode:
+  CER: +3.85% | WER: +2.20%
+```
 
 ---
 
-Feel free to contribute, open issues, or submit pull requests!
+## Tập dữ liệu
+
+### IAM Handwriting Database
+
+- 1,539 trang văn bản viết tay
+- 13,353 dòng văn bản riêng lẻ
+- 115,320 từ
+- 747 người viết khác nhau
+
+### Phân chia dữ liệu
+
+- Training: 90%
+- Validation: 10%
+
+### Data augmentation
+
+- Random brightness
+- Random erode/dilate
+- Random sharpen
+
+---
+
+## Công nghệ sử dụng
+
+- **Framework**: TensorFlow/Keras
+- **OCR**: mltu (Machine Learning Training Utilities)
+- **Interface**: Gradio
+- **Deployment**: ONNX Runtime
+- **Preprocessing**: OpenCV, NumPy
+- **Metrics**: jiwer (WER/CER calculation)
+
+---
+
+## Hạn chế và cải tiến
+
+### Hạn chế hiện tại
+
+- Chỉ hỗ trợ tiếng Anh
+- Cần ảnh có chất lượng tốt
+- Model size lớn (~100MB)
+
+### Hướng phát triển
+
+- Hỗ trợ đa ngôn ngữ (tiếng Việt)
+- Tối ưu model size (quantization, pruning)
+- Sử dụng Transformer architecture
+- Hỗ trợ nhận diện real-time
+
+---
+
+## Tham khảo
+
+- [IAM Handwriting Database](https://fki.tic.heia-fr.ch/databases/iam-handwriting-database)
+- [CTC Loss Tutorial](https://distill.pub/2017/ctc/)
+- [Viterbi Algorithm](https://en.wikipedia.org/wiki/Viterbi_algorithm)
+
+---
+
+## Giấy phép
+
+MIT License
+
+---
+
+## Đóng góp
+
+Mọi đóng góp đều được chào đón. Vui lòng:
+
+1. Fork repository
+2. Tạo branch mới (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Mở Pull Request
+
+---
+
+## Liên hệ
+
+Nếu có thắc mắc hoặc góp ý, vui lòng mở issue trên GitHub.
