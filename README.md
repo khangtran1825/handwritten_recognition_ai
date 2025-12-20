@@ -6,21 +6,19 @@ Dự án nhận diện câu chữ viết tay sử dụng TensorFlow và CTC loss
 
 ## Tổng quan
 
-Hệ thống sử dụng mạng neural sâu kết hợp CNN và Bidirectional LSTM để nhận diện câu chữ viết tay từ ảnh. Model được huấn luyện trên tập dữ liệu IAM Handwriting Database và có khả năng hậu xử lý văn bản sử dụng thuật toán Viterbi kết hợp Language Model.
+Hệ thống sử dụng mạng neural sâu kết hợp CNN và Bidirectional LSTM để nhận diện câu chữ viết tay từ ảnh. Model được huấn luyện trên tập dữ liệu IAM Handwriting Database.
 
 ### Kiến trúc model
 
 - **Backbone**: Residual CNN với 5 block
 - **Sequence modeling**: 2 lớp Bidirectional LSTM
 - **Decoder**: CTC (Connectionist Temporal Classification)
-- **Post-processing**: Viterbi algorithm + N-gram Language Model
 
 ---
 
 ## Tính năng
 
 - Nhận diện câu chữ viết tay từ ảnh
-- Hậu xử lý thông minh với Language Model
 - Sửa lỗi chính tả dựa trên OCR confusion matrix
 - Tính toán độ tin cậy (confidence score)
 - Đánh giá hiệu suất với CER và WER
@@ -117,15 +115,7 @@ self.learning_rate = 0.0005
 self.train_epochs = 1000
 ```
 
-### 2. Xây dựng corpus cho Language Model
-
-```bash
-python src/build_corpus.py
-```
-
-Corpus được tạo từ nhãn trong tập huấn luyện và lưu tại `models/model_demo/corpus.txt`.
-
-### 3. Chạy giao diện web
+### 22. Chạy giao diện web
 
 ```bash
 python app.py
@@ -133,7 +123,7 @@ python app.py
 
 Truy cập `http://127.0.0.1:7860` để sử dụng giao diện.
 
-### 4. Inference từ code
+### 3. Inference từ code
 
 ```python
 from mltu.configs import BaseModelConfigs
@@ -160,33 +150,7 @@ print(f"Độ tin cậy: {confidence:.2f}%")
 
 ---
 
-## Hậu xử lý (Post-Processing)
-
-Hệ thống sử dụng pipeline hậu xử lý đa tầng:
-
-### 1. Language Model
-
-- N-gram model (bigram) với Laplace smoothing
-- Đánh giá xác suất của chuỗi từ
-
-### 2. Spell Corrector
-
-- Edit distance (Levenshtein)
-- OCR confusion matrix (l/i/1, o/0, rn/m, ...)
-- Word frequency từ corpus
-
-### 3. Viterbi Algorithm
-
-- Tìm chuỗi từ tối ưu
-- Kết hợp spell correction và language model
-- Tính toán với dynamic programming
-
-### Ví dụ
-
-```
-Input:  "THE Faurth Gospel was almast certainly"
-Output: "The Fourth Gospel was almost certainly"
-```
+## Hậu xử lý (Pos```
 
 ---
 
