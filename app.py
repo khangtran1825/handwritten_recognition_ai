@@ -11,7 +11,6 @@ from mltu.utils.text_utils import ctc_decoder
 from mltu.transformers import ImageResizer
 from mltu.configs import BaseModelConfigs
 
-
 class ImageToWordModel(OnnxInferenceModel):
     def __init__(self, char_list, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -73,7 +72,7 @@ class ImageToWordModel(OnnxInferenceModel):
 
 
 # Load cấu hình
-config_path = "models/model_demo/configs.yaml"
+config_path = "models/20251201/configs.yaml"
 configs = BaseModelConfigs.load(config_path)
 
 # Khởi tạo model
@@ -87,17 +86,13 @@ def recognize_handwriting(image, ground_truth=None):
     try:
         if image is None:
             return None, None, None
-
         # Xử lý định dạng đầu vào
         if isinstance(image, dict):
             image = image.get("composite", image.get("background"))
-
         if isinstance(image, Image.Image):
             image = np.array(image)
-
         if not isinstance(image, np.ndarray):
             return None, None, None
-
         # Chuẩn hóa màu sắc
         if len(image.shape) == 3:
             if image.shape[2] == 4:
@@ -106,15 +101,13 @@ def recognize_handwriting(image, ground_truth=None):
                 image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         elif len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-
         # Dự đoán
         prediction_text, confidence_score = model.predict(image)
-
         # Hiển thị kết quả
         result_html = f"""
         <div style="padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                     border-radius: 12px; margin: 10px 0;">
-            <h2 style="color: white; margin: 0 0 15px 0; font-size: 1.3em;">📝 Kết quả nhận diện</h2>
+            <h2 style="color: white; margin: 0 0 15px 0; font-size: 1.3em;"> Kết quả nhận diện</h2>
             <div style="background: rgba(255,255,255,0.95); padding: 20px; border-radius: 8px; 
                         font-size: 1.8em; font-weight: 500; color: #2d3748; text-align: center;
                         box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
@@ -126,13 +119,13 @@ def recognize_handwriting(image, ground_truth=None):
         # Màu sắc confidence dựa trên score
         if confidence_score >= 80:
             conf_color = "#10b981"  # Green
-            conf_emoji = "🎯"
+            conf_emoji = ""
         elif confidence_score >= 60:
             conf_color = "#f59e0b"  # Orange
-            conf_emoji = "⚠️"
+            conf_emoji = ""
         else:
             conf_color = "#ef4444"  # Red
-            conf_emoji = "❌"
+            conf_emoji = ""
 
         confidence_html = f"""
         <div style="padding: 20px; background: white; border-radius: 12px; 
@@ -157,7 +150,7 @@ def recognize_handwriting(image, ground_truth=None):
 
             metrics_html = f"""
             <div style="padding: 20px; background: #f3f4f6; border-radius: 12px; margin: 10px 0;">
-                <h3 style="margin: 0 0 15px 0; color: #374151;">📊 Chi tiết đánh giá</h3>
+                <h3 style="margin: 0 0 15px 0; color: #374151;">Chi tiết đánh giá</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                     <div style="background: white; padding: 15px; border-radius: 8px; text-align: center;">
                         <div style="color: #6b7280; font-size: 0.85em; margin-bottom: 5px;">Character Error Rate</div>
@@ -181,7 +174,7 @@ def recognize_handwriting(image, ground_truth=None):
     except Exception as e:
         error_html = f"""
         <div style="padding: 20px; background: #fee; border-radius: 12px; border: 2px solid #ef4444;">
-            <h3 style="color: #dc2626; margin: 0 0 10px 0;">❌ Lỗi</h3>
+            <h3 style="color: #dc2626; margin: 0 0 10px 0;"> Lỗi</h3>
             <p style="color: #991b1b; margin: 0;">{str(e)}</p>
         </div>
         """
@@ -256,55 +249,55 @@ footer {
 
 # Tạo giao diện
 with gr.Blocks(css=custom_css, theme=gr.themes.Soft()) as demo:
-    gr.HTML('<h1 id="main_title">✍️ Handwriting Recognition AI</h1>')
-    gr.HTML('<p id="subtitle">Upload your handwritten text image for instant recognition</p>')
+    gr.HTML('<h1 id="main_title">AI nhận dạng chữ viết tay</h1>')
+    gr.HTML('<p id="subtitle">Hãy tải ảnh của bạn lên để nhận dạng ngay nhé!</p>')
 
     with gr.Row():
         with gr.Column(scale=1):
             # Upload ảnh
             image_input = gr.Image(
-                label="📤 Upload Image",
+                label="Tải ảnh",
                 type="pil",
                 height=400,
                 elem_classes="upload-section"
             )
 
             # Ground truth (optional) - Đơn giản hóa
-            ground_truth_input = gr.Textbox(
-                label="Ground Truth (optional)",
-                placeholder="Enter expected text to see metrics...",
-                lines=1,
-                visible=False
-            )
+            # ground_truth_input = gr.Textbox(
+            #     label="Kết quả đúng (tùy chọn)",
+            #     placeholder="Hãy điền kêt",
+            #     lines=1,
+            #     visible=False
+            # )
 
             # Buttons
             with gr.Row():
-                recognize_btn = gr.Button("🚀 Recognize", variant="primary", size="lg", scale=2)
-                clear_btn = gr.Button("🗑️ Clear", variant="secondary", size="lg", scale=1)
+                recognize_btn = gr.Button("Nhận dạng", variant="primary", size="lg", scale=2)
+                clear_btn = gr.Button("Xóa", variant="secondary", size="lg", scale=1)
 
         with gr.Column(scale=1):
             # Results
-            result_output = gr.HTML(label="Result")
-            confidence_output = gr.HTML(label="Confidence")
-            metrics_output = gr.HTML(label="Metrics")
+            result_output = gr.HTML(label="Kết quả")
+            confidence_output = gr.HTML(label="Độ tin cậy")
+            metrics_output = gr.HTML(label="Tính toán")
 
     # Event handlers
     recognize_btn.click(
         fn=recognize_handwriting,
-        inputs=[image_input, ground_truth_input],
+        inputs=[image_input],
         outputs=[result_output, confidence_output, metrics_output]
     )
 
     clear_btn.click(
         fn=lambda: (None, "", None, None, None),
         inputs=[],
-        outputs=[image_input, ground_truth_input, result_output, confidence_output, metrics_output]
+        outputs=[image_input,  result_output, confidence_output, metrics_output]
     )
 
     # Auto-recognize on image upload
     image_input.change(
         fn=recognize_handwriting,
-        inputs=[image_input, ground_truth_input],
+        inputs=[image_input],
         outputs=[result_output, confidence_output, metrics_output]
     )
 

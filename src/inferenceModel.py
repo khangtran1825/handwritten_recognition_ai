@@ -36,19 +36,19 @@ if __name__ == "__main__":
     project_root = os.path.dirname(current_dir)
 
     # 2. Tạo đường dẫn tuyệt đối tới file configs.yaml
-    config_path = os.path.join(project_root, "models", "model_demo", "configs.yaml")
+    config_path = os.path.join(project_root, "models", "20251201", "configs.yaml")
 
     # Load cấu hình
     configs = BaseModelConfigs.load(config_path)
 
     # 3. QUAN TRỌNG: Cập nhật đường dẫn model thành tuyệt đối
-    # configs.model_path lấy từ yaml là tương đối ("models/model_demo") -> cần nối với project_root
+    # configs.model_path lấy từ yaml là tương đối ("models/20251201") -> cần nối với project_root
     configs.model_path = os.path.join(project_root, configs.model_path)
 
     model = ImageToWordModel(model_path=configs.model_path, char_list=configs.vocab)
 
     # 4. Tạo đường dẫn tuyệt đối tới file val.csv
-    val_csv_path = os.path.join(project_root, "models", "model_demo", "val.csv")
+    val_csv_path = os.path.join(project_root, "models", "20251201", "val.csv")
     df = pd.read_csv(val_csv_path).values.tolist()
 
     accum_cer, accum_wer = [], []

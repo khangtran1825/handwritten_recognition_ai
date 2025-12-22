@@ -131,12 +131,12 @@ from src.inferenceModel import ImageToWordModel
 import cv2
 
 # Load config và model
-configs = BaseModelConfigs.load("models/model_demo/configs.yaml")
+configs = BaseModelConfigs.load("models/20251201/configs.yaml")
 model = ImageToWordModel(
     model_path=configs.model_path,
     char_list=configs.vocab,
     use_post_processing=True,
-    corpus_path="models/model_demo/corpus.txt"
+    corpus_path="models/20251201/corpus.txt"
 )
 
 # Đọc ảnh

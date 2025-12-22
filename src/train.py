@@ -1,23 +1,21 @@
 import tensorflow as tf
 # Train bằng GPU để tối ưu tốc độ
-try: [tf.config.experimental.set_memory_growth(gpu, True) for gpu in tf.config.experimental.list_physical_devices("GPU")]
+try:
+    [tf.config.experimental.set_memory_growth(gpu, True)
+     for gpu in tf.config.experimental.list_physical_devices("GPU")]
 except: pass
 
 from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, TensorBoard
-
 from mltu.preprocessors import ImageReader
 from mltu.transformers import ImageResizer, LabelIndexer, LabelPadding, ImageShowCV2
 from mltu.augmentors import RandomBrightness, RandomRotate, RandomErodeDilate, RandomSharpen
 from mltu.annotations.images import CVImage
-
 from mltu.tensorflow.dataProvider import DataProvider
 from mltu.tensorflow.losses import CTCloss
 from mltu.tensorflow.callbacks import Model2onnx, TrainLogger
 from mltu.tensorflow.metrics import CERMetric, WERMetric
-
 from model import train_model
 from configs import ModelConfigs
-
 import os
 from tqdm import tqdm
 
@@ -83,7 +81,8 @@ train_data_provider.augmentors = [
     RandomBrightness(), 
     RandomErodeDilate(),
     RandomSharpen(),
-    ]
+    RandomRotate(max_angle=10),
+]
 
 # Tạo kiến trúc mô hình TensorFlow
 model = train_model(
